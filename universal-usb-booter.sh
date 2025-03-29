@@ -25,13 +25,13 @@ fi
 wipe_device() {
     local device="$1"
 
-    echo "🚀 Wiping signatures from $device with wipefs..."
+    echo "Wiping signatures from $device with wipefs..."
     sudo wipefs -a "$device"
     
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Successfully wiped existing signatures from $device.${NC}"
+        echo -e "${GREEN}Successfully wiped existing signatures from $device.${NC}"
     else
-        echo -e "${RED}❌ Failed to wipe existing signatures. Exiting...${NC}"
+        echo -e "${RED}Failed to wipe existing signatures. Exiting...${NC}"
         exit 3
     fi
 
@@ -40,12 +40,38 @@ wipe_device() {
     echo -e "o\nn\np\n1\n\n\nw" | sudo fdisk "$device"
     
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Successfully created a new partition table and partition on $device.${NC}"
+        echo -e "${GREEN}Successfully created a new partition table and partition on $device.${NC}"
     else
-        echo -e "${RED}❌ Failed to create a new partition. Exiting...${NC}"
+        echo -e "${RED}Failed to create a new partition. Exiting...${NC}"
         exit 4
     fi
 }
+
+# Select USB device interactively using Bash's built-in 'select'
+select_usb_device() {
+    # Get USB devices and store them in an array
+    IFS=$'\n' read -d '' -r -a devices < <(lsblk -dpno NAME,TRAN,SIZE | grep "usb")
+
+    if [ ${#devices[@]} -eq 0 ]; then
+        echo "❌ No USB devices detected. Please connect a USB drive and try again."
+        exit 1
+    fi
+
+    # Display the selection menu with 'select'
+    PS3="Select a device by number: "
+    select device in "${devices[@]}"; do
+        if [ -n "$device" ]; then
+            # Capturar solo el nombre del dispositivo (/dev/sdX)
+            selected_device=$(echo "$device" | awk '{print $1}')
+            break
+        else
+            echo "❌ Invalid selection. Please try again."
+        fi
+    done
+
+    echo "$selected_device"
+}
+
 
 # --- Define the function to check if a partition is mounted ---
 check_mounted() {
@@ -55,7 +81,7 @@ check_mounted() {
 
     for part in $partitions; do
         if sudo findmnt "/dev/$part" > /dev/null 2>&1; then
-            echo "✅ /dev/$part is mounted. Attempting to unmount..."
+            echo "/dev/$part is mounted. Attempting to unmount..."
             sudo umount "/dev/$part" 2>/dev/null
             if [ $? -eq 0 ]; then
                 echo -e "${GREEN}Successfully unmounted /dev/$part.${NC}"
@@ -68,7 +94,7 @@ check_mounted() {
     done
 
     if sudo findmnt "$device" > /dev/null 2>&1; then
-        echo "✅ $device is mounted. Attempting to unmount..."
+        echo "$device is mounted. Attempting to unmount..."
         sudo umount "$device" 2>/dev/null
         if [ $? -eq 0 ]; then
             echo -e "${GREEN}Successfully unmounted $device.${NC}"
@@ -98,13 +124,9 @@ if [[ "$confirm" != "y" ]]; then
     exit 0
 fi
 
-# --- Display available disks ---
-echo -e "\n Available disks:"
-lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
-echo "-----------------------------------------------"
-
-# --- Ask the user to input the USB device path ---
-read -e -p "Enter your USB device path (e.g., /dev/sdb): " usb
+# --- Ask the user to select the USB device interactively ---
+echo "Please select the USB device you want to format and write the ISO to:"
+usb=$(select_usb_device) || exit 1
 
 # --- Confirm the device again ---
 read -p "You selected '$usb'. Are you sure? This will completely erase it. (y/n): " confirm
@@ -122,7 +144,7 @@ echo "Wiping the USB drive.. This may take a few seconds..."
 wipe_device "$usb"
 
 # --- Format the new partition as FAT32 ---
-echo "🚀 Formatting the partition as FAT32..."
+echo "Formatting the partition as FAT32..."
 sudo mkfs.vfat -F 32 "${usb}1"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}Successfully formatted the partition as FAT32.${NC}"
@@ -161,3 +183,32 @@ else
     echo -e "${RED}Something went wrong while writing the ISO.${NC}"
     exit 7
 fi
+
+# --- Attempt to mount the USB drive after writing ---
+echo "🔄 Attempting to mount the USB drive..."
+
+# Detectar el usuario real que ejecutó el script con sudo
+if [ -n "$SUDO_USER" ]; then
+    user_name="$SUDO_USER"
+else
+    user_name=$(whoami)
+fi
+# Detectar la ruta de montaje más común
+if [ -d "/media/$user_name" ]; then
+    mount_point="/media/$user_name/usbdrive"
+elif [ -d "/run/media/$user_name" ]; then
+    mount_point="/run/media/$user_name/usbdrive"
+else
+    mount_point="/mnt/usbdrive"
+fi
+
+# Crear el punto de montaje si no existe
+sudo mkdir -p "$mount_point"
+
+# Intentar montar la partición recién creada (usualmente /dev/sdX1)
+if sudo mount "${usb}1" "$mount_point"; then
+    echo -e "${GREEN}✅ USB drive mounted successfully at $mount_point.${NC}"
+else
+    echo -e "${RED}❌ Failed to mount the USB drive. You may need to mount it manually.${NC}"
+fi
+
