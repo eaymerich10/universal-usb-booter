@@ -47,7 +47,7 @@ wipe_device() {
     fi
 }
 
-# Select USB device interactively using Bash's built-in 'select'
+# --- Select USB device interactively using Bash's built-in 'select' ---
 select_usb_device() {
     # Get USB devices and store them in an array
     IFS=$'\n' read -d '' -r -a devices < <(lsblk -dpno NAME,TRAN,SIZE | grep "usb")
@@ -187,13 +187,14 @@ fi
 # --- Attempt to mount the USB drive after writing ---
 echo "🔄 Attempting to mount the USB drive..."
 
-# Detectar el usuario real que ejecutó el script con sudo
+# --- Detect the real user who executed the script with sudo ---
 if [ -n "$SUDO_USER" ]; then
     user_name="$SUDO_USER"
 else
     user_name=$(whoami)
 fi
-# Detectar la ruta de montaje más común
+
+# --- Detect the most common mount path ---
 if [ -d "/media/$user_name" ]; then
     mount_point="/media/$user_name/usbdrive"
 elif [ -d "/run/media/$user_name" ]; then
@@ -202,13 +203,13 @@ else
     mount_point="/mnt/usbdrive"
 fi
 
-# Crear el punto de montaje si no existe
+# --- Create the mount point if it does not exist ---
 sudo mkdir -p "$mount_point"
 
-# Intentar montar la partición recién creada (usualmente /dev/sdX1)
+# --- Attempt to mount the newly created partition (usually /dev/sdX1) ---
 if sudo mount "${usb}1" "$mount_point"; then
-    echo -e "${GREEN}✅ USB drive mounted successfully at $mount_point.${NC}"
+    echo -e "${GREEN}USB drive mounted successfully at $mount_point.${NC}"
 else
-    echo -e "${RED}❌ Failed to mount the USB drive. You may need to mount it manually.${NC}"
+    echo -e "${RED}Failed to mount the USB drive. You may need to mount it manually.${NC}"
 fi
 
